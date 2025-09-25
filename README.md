@@ -33,12 +33,11 @@ It automatically reads incoming emails, classifies replies, generates structured
 ---
 
 ## 📷 Workflow Screenshot
-<img width="1580" height="290" alt="image" src="https://github.com/user-attachments/assets/1e8922a2-b9a1-4472-a143-3f9c4b835eed" />
+<img width="1604" height="290" alt="image" src="https://github.com/user-attachments/assets/25139a49-74cb-47d3-bed7-e524d5a126a7" />
 
 ---
 
-## 📂 Files
-- `Alex_Email_processing.json` → n8n workflow export (importable)  
+
 
 ---
 
