@@ -1,0 +1,2318 @@
+{
+  "name": "Alex_Email_processing_Demo_V1",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{\n  $('Merge').item.json.Type === \"new_email\"\n    ? \"*Original Email Details:*\\nEmail_From: \" + $('Merge').item.json.from +\n      \"\\nSubject: \" + $('Merge').item.json.subject +\n      \"\\nBody:\\n\" + $('Merge').item.json.body +\n      \"\\n\\nOriginal_customer_Email:\\nfor your reference:\\n\" + $('Merge').item.json.body\n\n    : $('Merge').item.json.Type === \"support_email\"\n    ? \"*Support Email Details:*\\nEmail_From: \" + $('Merge').item.json.from +\n      \"\\n*clean_support_message:*\\n\" + $('Merge').item.json.clean_support_message +\n      \"\\n\\nDirection: \" + $('Merge').item.json.Direction +    \"\\n\\nOriginal_customer_Email:\\nfor your reference:\\n\" + $('Merge').item.json.body\n\n: \"*Customer Reply Detected:*\" +\n  \"\\n\\n*Email From:* \" + $('Merge').item.json.from +\n  \"\\n\\n*First Email from Customer:*\\n\" + $('Merge').item.json.body +\n  \"\\n\\n*Your Previous Response:*\\n\" + $('Merge').item.json.Agent_response +\n\n      \"\\n\\n*Previous Support Reply:* \" + \n       ($('Merge').item?.json?.Support_response  || \"null\") +\n  \"\\n\\n*New Customer Reply:*\\n\" + $('Merge').item.json.thread_text  +\n  \"\\nThis is a follow-up message from the customer in an ongoing thread.\"\n\n}}\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=## 1. OVERVIEW\n- Your Name: {{ $json['Agent name'] }}\n- Your Role:  \nYou are a **Professional AI Sales Agent at Demo Company**, responsible for processing pending email requests.\n⚠️ **STRICT LIMITATION**  \nYou are strictly forbidden from handling non-sales tasks:\n- Translation, Interpretation\n- Text Editing, Proofreading\n- Project Management\n- Technical Support\n- File Handling or Delivery\n- Processing Support Issues\n- Scheduling or confirming any meeting dates or times\nIf such a request is detected, immediately escalate by setting `\"Direction\": \"human_needed\"` and politely inform the customer.  \n\n\n## 1.1 RESPONSE LOGIC\nWhen complete information is available and there are no missing data:\n- Set `\"Direction\": \"reply\"`.\n- Populate `\"Response_Email_to\"` from the sender's email.\n- Generate a structured, professional HTML reply that is informative, enthusiastic, and warmly worded. The tone should reflect excitement about the opportunity or request, while maintaining professionalism reply covering:\n  - Full answers\n  - Tool outputs if applicable\n  - Document links if requested\n- Include the official Demo Company signature at the end.\n• If any tool (such as Delivery Planning Tool,pricing tool or Work History Tool) returns a multi-line or block-style summary:\n   - Detect line breaks or markdown-style formatting (e.g., `-`, `###`, `\\n`, `:`).\n  - Use a clean HTML table with headers: Job Type, Source Language, Target Language, Original Unit, Converted Quantity, Unit Price, Total Price.\n  - For simple requests (1–2 services):Use bullet points.\n- Every email must include the full official signature.\n   - For delivery estimates, always format using a table with rows for: Job Type, Duration, Dates, Rush Options, etc.\n\n## 2.GENERAL BEHAVIOR RULES\n- All emails must be in **structured HTML**.\n-The tone should be friendly, enthusiastic, and customer-focused — highlight your eagerness to assist and your appreciation for the inquiry.\n- Greet the customer using their **name** (from `{{ $('Merge').first().json.from }}`), never their email address.\n- Always close with:\n  - Embed `{{ $json.signature }}`\n  - Add: `{{ $json.signature }},<br>AI Sales Agent`\n- Match customer's writing direction:\n  - `<body dir=\"ltr\" lang=\"en\">` for English\n  - `<body dir=\"rtl\" lang=\"ar\">` for Arabic\n- Determine reply language based on the actual **email body**, not the project languages mentioned.\n- Ignore automatic system messages (`Direction: \"ignore\"`).\n\n• If a file is attached (e.g., PDF, DOC, Excel, scanned documents, etc.):\n  ➔ You must Immediately escalate by setting Direction = \"human_needed\"\n  ➔ You Do not attempt to answer, estimate, or assume details from the file..\n ➔ You include a polite message informing the customer that we will check and get back to you shortly.\n-Users often communicate their needs indirectly. You must analyze the full message, identify their goal, and infer the correct type of service or tool needed.\n\n## 3.0 CHAIN-OF-THOUGHT LOGIC (DRIVEN BY INPUT FLAGS)\nThis logic assumes that one of the following input flags will be set to `true` in the incoming JSON payload:\n- `Customer_email` → A new customer email was received\n- `Support_email` → The support team has reviewed the case and sent a structured reply\n- `Reply_to_Customer_email` → A customer is replying to an earlier email sent by the AI Agent\n\n### 3.1 DECIDE MESSAGE TYPE (MUST RUN FIRST)\nYou MUST begin by checking these flags in the following priority order. Use the values from the incoming JSON (usually from the `Merge` node):\n\nif  Customer_email({{ $('Merge').item.json.New_Customer_email }} === true) → Follow Customer Email Flow\nelse if Support_email ({{ $('Merge').item.json.Support_email }} === true) → Follow Support Response Flow\nelse if ({{ $('Merge').item.json.Reply_to_Customer_email }} === true) → Follow Customer Reply Flow\nOnly one of these will be true at a time. Once identified, proceed to the appropriate section below.\n\n### 3.2 New CUSTOMER EMAIL FLOW (`New_Customer_email=== true`)\nThis is a new direct inquiry from a customer.\nActions:\n  1. Analyze the email body and subject line to understand the customer’s intent (e.g., pricing, delivery, company info).\n  2. Run the Fields Extractor Tool.\n  3. Trigger the appropriate tools based on the detected intent:\n     - Pricing Tool\n     - Delivery Tool\n     - Work History Tool\n     - support_doc_Tool\n     - Knowledge Base Tool\n  4. **Compose a structured and professional HTML reply** using the outputs of the tools:\n   - Include all available results\n   - Always add relevant content from the Knowledge Base Tool\n   - Format tables, bullet points, and headers clearly\n   - End with the official signature:  \n     `{{ $json.signature }},<br>AI Sales Agent`\n5. **If the request is understood but 1–2 key details are missing** (e.g., quantity, language pair, job type):  \n   - You must respond directly to the customer with a polite and professional HTML email requesting the missing information.  \n   - Set `\"Direction\": \"reply\"` — do **not escalate** in this case.  \n   - Only escalate by setting `\"Direction\": \"human_needed\"` if:\n     - The request is unclear, vague, or outside of sales scope,  \n     - Or you are unable to proceed or identify the appropriate next step\n\n**Special Handling for Capability or Experience Questions:**\n- If the customer asks whether Demo Company can deliver a service (e.g., “Can you do translation services for the legal sector?”) or about experience (e.g., “Do you have experience with medical translations?”), you must:\n\n   1. Respond affirmatively and enthusiastically confirming capability:\n       - e.g., “Yes, we can definitely assist you with legal sector translations.”\n   2. Always trigger the Work History Tool to retrieve past examples or descriptions of experience in the relevant service and domain.\n   3. Include relevant examples in the reply to demonstrate expertise.\n   4. Only request further details (e.g., quantity, language pair) if the customer explicitly requests a quote, pricing, or turnaround times.\n\n**Examples of capability questions:**\n- “Can you do…?”\n- “Do you provide…?”\n- “Are you able to…?”\n- “Do you have experience with…?”\n\n**Important:**\n- Do NOT default to asking for more details if the question is only about whether you can provide a service.\n- Confirm capability first, then suggest next steps if appropriate.\n\n### 3.3 SUPPORT EMAIL FLOW (`Support_email === true`)\nThis is a structured response provided by the Support Team after reviewing the customer's inquiry.\nActions:\n1. Use the provided support JSON values directly:\n   - `\"Direction\"` → use this value exactly.\n   - you must always set \"Direction\" to \"Reply\".\n   - `\"clean_support_message\"` → this is the base message for your reply.\n\n3. Compose the final reply:\n   - Start with the content from `\"clean_support_message\"`.\n   - You must not change anything from \"clean_support_message\" and forward it to client.\n   - End the reply with the official signature:\n{{ $json.signature }},<br>AI Sales Agent\n\n### 3.4 CUSTOMER REPLY FLOW (`Reply_to_Customer_email === true`)\nThis is a reply from a customer to a previous email sent by the AI Agent.\nActions:\n1. Re-analyze the **entire thread**, not just the new reply. You must check, in priority order:\n   - `New Customer Reply` (latest input)\n   - `AI Agent’s Previous Reply` (if present)\n   - `Previous Support Reply` (if available)\n   - `Original Customer Email`\n   → Extract or infer any useful information from these, especially job_type, quantity, language pair, or unit.\n\n2. Run the Fields Extractor Tool again on the **combined content** if the new reply is vague but previous context exists.\n\n3. Use the best available value for each field. You may reconstruct missing info if it can be reliably inferred from earlier messages (e.g., if quantity is missing in the reply but was clearly stated earlier).\n\n4. Then:\n   - If all required fields are now present → proceed as if `Customer_email === true`.\n**5**.f any key fields remain unclear or missing, but you have enough understanding to proceed and only require clarification or minor additional details (e.g., quantity, unit, or language pair):\n   ➤ You must reply directly to the customer, asking for the missing information.\n   ➤ Set `\"Direction\": \"reply\"` and compose a helpful, professional HTML email to request the specific details.\n   ➤ Do **not** escalate to `\"human_needed\"` unless the agent is genuinely unable to proceed, or the request is outside the scope of sales-related services.\n\n\n\n\n### 3.5 ESCALATION RULES :\nA. You must Set `\"Direction\": \"human_needed\"` in **all other cases**, including:\n  1. You are not unable to detect any valid intent, job type, language pair, or actionable content.\n  2. You must Set `\"Direction\": \"human_needed\"` IF The request is not clearly sales-related, or its purpose is unknown.\n \n3. Required fields are:\n   - **Completely missing** and cannot be confidently inferred from the message or previous context, **and**\n   - The agent is **not able to request missing info without risking misunderstanding**\n   ➤ However, if you **understands the request** and only key details** are missing (e.g., quantity, language pair), the agent must:\n   - Respond directly to the customer, asking for those specific details\n   - Set `\"Direction\": \"reply\"`\n   - **Do not escalate**\n  4. The customer explicitly requests support, file help, technical action, or other non-sales services.\n  5. The request contains unsupported service types, unrecognized formats, or vague content.\n  6. A triggered tool fails to return a usable result (e.g., invalid pricing or unknown job type).\n  7. A multi-part request includes components that cannot be handled automatically.\n  \n  8. You must Set `\"Direction\": \"human_needed\"`,If the user describes a **marketing or performance issue** (e.g., low engagement, unclear response rate, vague complaints) and **no concrete action can be taken automatically**, you must:\n    - Provide a general response enriched by the Knowledge Base Tool.\n    - Then **set `\"Direction\": \"human_needed\"`**.\n    - This ensures human support can diagnose targeting, messaging, or campaign strategy.\nB.In these cases:- You **must still compose a full HTML reply**, enriched with all possible Knowledge Base content.\n9. If the customer requests to schedule or confirm a meeting time or date, you must:\n   - Set \"Direction\": \"human_needed\"\n   - Compose a polite HTML reply stating that a colleague will follow up to coordinate scheduling.\n\n### 3.6. you must Set `\"Direction\": \"ignore\"` if:\n- The message is an auto-reply, out-of-office notice, or irrelevant system-generated content.\n- The message is an **auto-reply**, **out-of-office**, **sick leave notification**, or **OOO-style message**, especially if it contains:\n  - \"out of office\"\n  - \"on sick leave\"\n  - \"OOTO\"\n  - \"I’m unavailable\"\n  - \"please contact [name] at [email]\"\n- These should all trigger: \"Direction\": ignore\", You must not respond or escalate such cases,do not reply or escalate.\n\n- You must always determine the final \"Direction\" value based on the completeness, clarity, and type of the input {except when the support team has already set \"Direction\": \"reply\" — in that case, you must preserve and use the support-defined direction without overriding it, even if the input appears incomplete or ambiguous}. Regardless of the direction, you must always generate a complete, professional HTML email that provides maximum value to the customer.\n\n##4. Available Tools:\n• Fields_Extractor_tool: This tool analyzes the email body to extract and normalize structured fields such as job_type, quantity, unit, source_language,  target_language and subject_matter.Always Pass full user email  :({{ $('Merge').first().json.body }} ) to the tool and Use this tool before calling any downstream tools (like pricing, planning, or work history) to ensure clean and consistent data.\n\n• Knowledge Base Tool: Retrieve company , service-related information and data about user request, please trigger this tool in all responses to answer any query.you must always consult this tool for every inquiry, especially when the requested service, offering, or keyword (e.g., dubbing, localization, SEM, etc.) is not clearly matched with an internal tool.\nThis tool should be triggered even if other structured tools return a valid response — use the output to enrich, verify, or confirm answers.\nIf the Knowledge Base Tool provides relevant details, include them in the HTML email body.\nIf the tool returns no data, and no other tools cover the query, escalate to support by setting Direction to \"human_needed\".\n\n• Pricing Tool: Fetch pricing and quotations.\n• Delivery Planning Tool: Obtain delivery time estimates.\n• Work history tool: Use this tool to retrieve information ,past project examples and metrics related to a specific job type (e.g., translation, editing, transcription, translation & Editing ,etc.).\n• Get supported docs Tool: Obtain list of supported documents and their links that could be added to the email to support your answer.\n\n\n## 5.0 TOOL TRIGGERING RULES\n • Always trigger Fields_Extractor_tool first.\n • STRICT TOOL CONTROL:\n   - Only trigger a tool if the customer inquiry explicitly demands it.\n  - Always trigger Knowledge Base Tool for every inquiry to enrich the reply.\n  - Trigger tools only if the customer explicitly mentions:\n  - Pricing Tool: if the email mentions price, quotation, cost, budget, fees, or rate.\n  - Delivery Planning Tool: if the email mentions turnaround time, timeline, deadline, or delivery date.\n   - Work History Tool: if the email asks for previous projects, client references, samples, or uses phrases like \"work history\", \"proofreading history\", \"past experience\", or \"experience with [service]\".\n\n-  Get Supported Docs Tool: if the email asks for specific certifications, such as \"ISO 9001\" or \"ISO 17100\".\n⚠️ Never trigger tools for technical support issues, file handling problems, or project management requests.\n\n## 6.0 Final Notes:\n1. After processing all required tools, you must generate a complete and well-structured HTML email.\n2. The final reply must include:\n   - All outputs from the tools that returned a result\n   - Relevant information from the Knowledge Base (always include this)\n3. Ensure the content is clearly formatted, easy to read, and styled professionally to reflect high-quality communication.\n\n##7.0 Important Notes TO FOLLOW:\n1- You must SCAN the entire user query (including body, subject, and signature) for any recognizable:\n  - Service type (e.g., interpretation, editing, subtitling, transcription, etc.)\n  - Languages, domains (e.g., legal, medical), or file types\n  - Tool-related terms (e.g., deadline, rate, ISO, past work) \n  - any keywork can get info about.\n2- Use the Knowledge Base Tool output to enrich the response:\n  - Even if an exact match is not found, include any relevant general information (e.g., “how interpretation works,” “our selection criteria for interpreters,” “standard turnaround times,” “certification procedures”).\n3**NEVER leave the email incomplete or vague.** Always offer useful context.\n4. You must incorporate any related Knowledge Base content, even if the customer's query does not yield a direct match:\n   A.Always include relevant background details, general descriptions, or service principles found in the Knowledge Base.\n   B.To improve coverage and increase response value, you MUST trigger the Knowledge Base Tool three time:\n     - First with the customer’s original question as-is\n     - Then with a **paraphrased version** that broadens or clarifies the request (e.g., turn “Anuak interpretation” into “rare language interpreting” or “interpretation service selection process”)\n     - third with general question about user query.\n   - Combine both outputs to enrich the final HTML reply.\n  - Examples: If user asks about Anuak → include generic interpretation info.\n  - If user asks about an unknown file type → describe standard file handling policies.\n5. If only general or partial info is available (no exact answer):\n   -You Muyst Respond with a helpful explanation like:\n     > *“While we currently do not have specific information about [the requested item], here’s how we typically handle related services at Demo Company...”*\n   - **AND You Must set:** `\"Direction\": \"human_needed\"`\n6- ALWAYS respond with **something helpful**, based on detected keywords and enriched by available knowledge.\n7- You must pass full output from Fields_Extractor_tool to other tools.\n8-For all emails => You must ALWAYS compose a complete, professional HTML reply — even if exact tool data is missing or the service requested is unsupported.\n\n## 8.Excitement-Oriented Next-Step:\nAt the end of every email, you must:\n1. Analyze both the customer’s original email and the AI’s own reply.\n2. Suggest the next most relevant step the customer should take to move forward.\n3. Phrase this next step in a way that makes the customer feel excited and confident about working with Demo Company.\nThe goal is to build momentum, express genuine enthusiasm for the collaboration, and make the customer feel their project is valued.\n- **Always use a warm, confident tone**.\n\n## 9.⚠️ IMPORTANT FORMAT RULE (MANDATORY):\n\n-YOU MUST NEVER return output inside triple backticks (` ```json `) or markdown formatting.\n- You must return a clean, raw JSON object like:\n\n\nOutput format:\n{\n\t\"to_email\": \"\",\n\t\"Email_subject\": \"\",\n    \"emil_body\": \"\",\n    \"Direction\":\"\",\n     \"Agent_email\":\"\",\n     \"Support_email\":\"\",\n      \"Customer_name\":\"\",\n     \"requested_documents\": [\"\"]\n}\n- Field meanings and logic:\n    - `to_email`:  \n        • This must always be the email address of the person who **sent** the message (i.e., the actual sender).  \n        • Extract it from metadata:  \n          `{{ $('Merge').item.json.from }}`  \n        • DO NOT use emails mentioned in the message body like `Email: elsa.v@...` — those may belong to other people referenced in the text.\n        • You should respond to the true sender of the email thread.",
+          "returnIntermediateSteps": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        2928,
+        208
+      ],
+      "id": "0fdc83bc-4c3b-4348-ab5b-b4c7675e9f7b",
+      "name": "AI Agent",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2304,
+        560
+      ],
+      "id": "708866f1-85bb-41d8-8398-137525f87c72",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "name": "knowledge_base",
+        "description": "Retrieve data about user request, please trigger this tool in all responses to answer any query and give the user full details.",
+        "topK": 8
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [
+        3264,
+        560
+      ],
+      "id": "72a5f233-c38e-46a9-ad0d-7cd647598cf3",
+      "name": "Answer questions with a vector store"
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-ada-002",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3104,
+        880
+      ],
+      "id": "b7879463-adda-4010-a44e-692e1e555ea6",
+      "name": "Embeddings OpenAI"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3760,
+        416
+      ],
+      "id": "7ada856a-111d-4496-b87b-176663c44847",
+      "name": "OpenAI Chat Model2"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "maxRetries": 2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        3488,
+        752
+      ],
+      "id": "e464dcb2-4108-451c-b8ef-97e22b9612d3",
+      "name": "OpenAI Chat Model_ret"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"to_email\": \"\",\n\t\"Email_subject\": \"\",\n    \"emil_body\": \"\",\n    \"Direction\":\"\",\n     \"Agent_email\":\"\",\n     \"Support_email\":\"\",\n     \"Customer_name\":\"\",\n  \"requested_documents\": [\"\"]\n}\n  \n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        3760,
+        592
+      ],
+      "id": "042a9831-1c73-4db9-a656-d98a15fc8ccc",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d5f8b506-bf3f-4498-8799-d624725897fa",
+              "name": "output.to_email",
+              "value": "={{ $('Merge').item.json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "f9fbdfd6-9b8a-4df8-b62f-e345b103f67e",
+              "name": "output.Email_subject",
+              "value": "={{ $json.output.Email_subject }}",
+              "type": "string"
+            },
+            {
+              "id": "7bcbe110-9ff7-4f64-8f54-bf104bcd4e8b",
+              "name": "output.emil_body",
+              "value": "={{ $json.output.emil_body }}",
+              "type": "string"
+            },
+            {
+              "id": "a0da41e5-71f2-4096-bc40-0fea08f8c3ae",
+              "name": "output.Direction",
+              "value": "={{$json.output.Direction }}",
+              "type": "string"
+            },
+            {
+              "id": "4a999653-ab03-45b7-ac15-5d2eb93ed267",
+              "name": "From",
+              "value": "={{ $json.output.From }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3344,
+        208
+      ],
+      "id": "7bd00403-2b3e-4a61-8bb5-cb86f0a795e5",
+      "name": "Agent_replies"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"Audit_right_email_reply\": 7,\n\t\"Audit_right_email_to\":false,\n  \"Audit_comment\":\"\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        4112,
+        432
+      ],
+      "id": "10434f51-38a6-4a5b-ae27-c12d961ccd72",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "884fd4e3-5e2e-4bf2-a3bb-83d7dbd1db97",
+              "name": "output.Audit_right_email_reply",
+              "value": "={{ $json.output.Audit_right_email_reply }}",
+              "type": "number"
+            },
+            {
+              "id": "baa1bb37-61df-4e26-81d9-5b6ff1cff354",
+              "name": "output.Audit_right_email_to",
+              "value": "={{ $json.output.Audit_right_email_to }}",
+              "type": "boolean"
+            },
+            {
+              "id": "80cbc560-b630-49f4-a994-b427e41253be",
+              "name": "output.Audit_comment",
+              "value": "={{ $json.output.Audit_comment }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4368,
+        208
+      ],
+      "id": "0b61ef76-9c8f-4109-b22b-ca7f64199d91",
+      "name": "Audit Result Fields"
+    },
+    {
+      "parameters": {
+        "name": "Pricing_Tool",
+        "description": "this tool will get customer pricing and quotation",
+        "workflowId": {
+          "__rl": true,
+          "value": "1BKMLalPaG1AdJhX",
+          "mode": "list",
+          "cachedResultName": "pricing_workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Query": "={{ $fromAI('Fields_Extractor_tool_output') }}",
+            "brand_id": 0
+          },
+          "matchingColumns": [
+            "Query"
+          ],
+          "schema": [
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "brand_id",
+              "displayName": "brand_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        560
+      ],
+      "id": "678cb532-a3e0-48b5-aaac-9f831ff43622",
+      "name": "Pricing workflow"
+    },
+    {
+      "parameters": {
+        "name": "Delivery_Planning_Tool",
+        "description": "this tool will get work expected delivery plan",
+        "workflowId": {
+          "__rl": true,
+          "value": "cmNjMTvtTBUk8LUD",
+          "mode": "list",
+          "cachedResultName": "planing_workflow_01"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Query": "={{ $fromAI('Fields_Extractor_tool_output') }}"
+          },
+          "matchingColumns": [
+            "Query"
+          ],
+          "schema": [
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        560
+      ],
+      "id": "786175f6-12da-482c-8a8c-99cc924e0159",
+      "name": "planning workflow"
+    },
+    {
+      "parameters": {
+        "format": "resolved",
+        "options": {
+          "forceReconnect": 5
+        }
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        16,
+        304
+      ],
+      "id": "15b71968-ae03-46f0-8185-311a4c6096dd",
+      "name": "Email_Trigger"
+    },
+    {
+      "parameters": {
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "message_id",
+              "value": "={{ $('Email_Trigger').first().json.messageId }}"
+            },
+            {
+              "column": "message_datetime",
+              "value": "={{ isNaN(new Date($('Email_Trigger').first().json.date)) ? null : new Date($('Email_Trigger').first().json.date).toISOString().slice(0, 19).replace('T',' ') }}\n"
+            },
+            {
+              "column": "from",
+              "value": "={{ $('Email_Trigger').first().json.from.value[0].address }}"
+            },
+            {
+              "column": "body",
+              "value": "={{ $('Email_Trigger').first().json.text.replace(/(^[\\t ]*\\n)+/gm, '') }}"
+            },
+            {
+              "column": "to",
+              "value": "={{ $('Email_Trigger').first().json.headers.to }}"
+            },
+            {
+              "column": "subject",
+              "value": "={{ $('Email_Trigger').first().json.subject }}"
+            },
+            {
+              "column": "cc",
+              "value": "={{ $('Email_Trigger').first().json.headers.cc }}"
+            },
+            {
+              "column": "status",
+              "value": "pending"
+            },
+            {
+              "column": "has_attachments",
+              "value": "={{ Object.keys($node[\"Email_Trigger\"].binary || {}).length > 0 ? 1 : 0 }}\n"
+            }
+          ]
+        },
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        864,
+        304
+      ],
+      "id": "75c4e520-1ca4-49c6-a785-b5b534f83277",
+      "name": "Insert_new_mail",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.data.insertId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1184,
+        304
+      ],
+      "id": "f80d55a7-7f2a-459f-8131-b102473d8a94",
+      "name": "MySQL_get_new"
+    },
+    {
+      "parameters": {
+        "tableName": "FTKNOWLEDGE",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePGVector",
+      "typeVersion": 1,
+      "position": [
+        3152,
+        752
+      ],
+      "id": "a8e29101-7cfb-486e-91df-e87280c1dac9",
+      "name": "Postgres PGVector Store"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get_supported_docs",
+        "documentId": {
+          "__rl": true,
+          "value": "1PE8hqFsiONNa1zDKQZc7D42xjjyFqzyYLlyP5750jks",
+          "mode": "list",
+          "cachedResultName": "Docs",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PE8hqFsiONNa1zDKQZc7D42xjjyFqzyYLlyP5750jks/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PE8hqFsiONNa1zDKQZc7D42xjjyFqzyYLlyP5750jks/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        3152,
+        560
+      ],
+      "id": "8f353157-08dd-4e93-a70f-c6b6aaae6c6b",
+      "name": "Get_supported_docs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9227a82e-350f-497b-87ed-d669db6e31e3",
+              "leftValue": "={{ $json.output.Audit_right_email_reply }}",
+              "rightValue": 8,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "48e5a847-7b45-474e-b998-431d8bca02a7",
+              "leftValue": "={{ $('Agent_replies').item.json.output.Direction }}",
+              "rightValue": "reply",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4704,
+        208
+      ],
+      "id": "b332659c-bd06-4097-86e5-d96ae79c4910",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3edd281d-6983-4c7f-b981-932cb538166a",
+              "name": "output.Direction",
+              "value": "support",
+              "type": "string"
+            },
+            {
+              "id": "dd1d07e5-1db4-48ee-8a5f-8a71d5774db1",
+              "name": "attachment_1",
+              "value": "={{ Object.keys($node[\"Email_Trigger\"].binary.attachment_0 || {}) }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5184,
+        448
+      ],
+      "id": "b3ade79f-07ef-489c-9f1b-311eec702d1f",
+      "name": "Direction edit"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "valueToMatchOn": "={{ $('select original email').item.json.data[0].id }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "workflow_status_id",
+              "value": "1"
+            },
+            {
+              "column": "support_response",
+              "value": "=support_response:{{ $json.text }}"
+            },
+            {
+              "column": "cc",
+              "value": "={{ $('Email_Trigger').first().json.headers.cc }}"
+            }
+          ]
+        },
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        880,
+        80
+      ],
+      "id": "9019c235-ce2d-4d1a-83ff-f1ad5bdcaac7",
+      "name": "update_with_support_reply"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data[0].human_support }}",
+                    "rightValue": "support",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "9d3a5292-7d46-43de-8278-f6bb6d79e1f3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "support_reply"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f6c6b583-e0a2-4d67-8aa1-284bac838f72",
+                    "leftValue": "={{ $json.data }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "array",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "new_email"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e1e48cf1-36ad-4ee4-b821-963ffbc37562",
+                    "leftValue": "={{ $json.data[0].customer_reply_on_message_id }}",
+                    "rightValue": "=null",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cutstomer_reply_email"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        528,
+        288
+      ],
+      "id": "45943ed0-8b5b-4403-a74c-74da2670b2a1",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "fromEmail": "agent@example.com",
+        "toEmail": "=bayan.maged@sprinters.ai,ghada.anwar@future-trans.com",
+        "subject": "=RE: {{ $('Merge').item.json.subject }}",
+        "html": "=<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Support Request Escalation</title>\n  <style>\n    body {\n      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n      font-size: 14px;\n      color: #2c3e50;\n      background-color: #f4f7fa;\n      padding: 40px;\n    }\n\n    .container {\n      max-width: 800px;\n      margin: auto;\n      background-color: #ffffff;\n      border-radius: 8px;\n      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);\n      padding: 30px;\n    }\n\n    .header {\n      font-size: 22px;\n      font-weight: bold;\n      color: #e67e22;\n      margin-bottom: 20px;\n      border-bottom: 2px solid #ececec;\n      padding-bottom: 10px;\n    }\n\n    .section-title {\n      font-size: 16px;\n      font-weight: 600;\n      color: #34495e;\n      margin-top: 30px;\n      margin-bottom: 10px;\n    }\n\n    .details-box, .agent-reply, .customer-reply {\n      border-radius: 6px;\n      padding: 18px 22px;\n      margin-bottom: 20px;\n      line-height: 1.5;\n    }\n\n    .details-box {\n      background-color: #e3f2fd;\n      border: 1px solid #bbdefb;\n    }\n\n    .details-box p {\n      margin: 6px 0;\n    }\n\n    .details-box p strong {\n      color: #2c3e50;\n      min-width: 120px;\n      display: inline-block;\n    }\n\n    .agent-reply {\n      background-color: #fff3e0;\n      border-left: 4px solid #f39c12;\n      font-size: 14px;\n      white-space: pre-wrap;\n    }\n\n    .customer-reply {\n      background-color: #e8f5e9;\n      border-left: 4px solid #66bb6a;\n    }\n\n    .footer {\n      font-size: 16px;\n      color: #c0392b;\n      font-weight: bold;\n      margin-top: 30px;\n      padding: 20px;\n      border-top: 2px solid #e74c3c;\n      background-color: #fdecea;\n    }\n  </style>\n</head>\n<body>\n\n  <div class=\"container\">\n\n    <div class=\"header\">⚠️ Support Request Escalation</div>\n\n    <div class=\"section-title\">📩 Original Email Details</div>\n    <div class=\"details-box\">\n      <p><strong>From:</strong> {{ $('Merge').item.json.from }}</p>\n      <p><strong>Subject:</strong> {{ $('Merge').item.json.subject }}</p>\n      <p><strong>Email Body:</strong><br>{{ $('Edit Fields').item.json.Email_body_as_HTML }}</p>\n    </div>\n\n    <div class=\"section-title\">🤖 Suggested Reply from AI Agent or agent Reply to customer</div>\n    <div class=\"agent-reply\">\n      {{ $('Agent_replies').item.json.output.emil_body }}\n    </div>\n\n    <div class=\"section-title\">💬 Customer Reply</div>\n    <div class=\"customer-reply\">\n      {{ $('Merge').item.json.Customer_reply }}\n    </div>\n\n    <div class=\"footer\">\n      <em>Note:</em> This message has been escalated to the support team because the AI agent was unable to generate a complete and confident reply.<br>\n      Please review the information above and take any necessary action or provide clarification to proceed.\n    </div>\n\n  </div>\n\n<p>\n{{ Object.keys($node[\"Email_Trigger\"].binary || {}).join(', ') }}\n</p>\n\n</body>\n</html>\n",
+        "options": {
+          "attachments": "attachment_0",
+          "replyTo": "={{ $('AI Agent').item.json.output.Agent_email }}"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        5840,
+        448
+      ],
+      "id": "1a61c6cf-1ca0-4a32-82a4-acd203f950cd",
+      "name": "Support Email",
+      "webhookId": "eb334d7c-95c6-4465-a74f-5f3a02115be9"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "name"
+        },
+        "returnAll": true,
+        "where": {
+          "values": [
+            {
+              "column": "reply_on_message_id",
+              "value": "={{ $json.inReplyTo }}"
+            },
+            {
+              "column": "customer_reply_on_message_id",
+              "value": "={{ $json.inReplyTo }}"
+            }
+          ]
+        },
+        "combineConditions": "OR",
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        272,
+        304
+      ],
+      "id": "d5488cee-71ff-4432-b35a-34a8de2218e0",
+      "name": "select original email",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $('Switch').first().json.data[0].id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1072,
+        80
+      ],
+      "id": "2efbb367-0073-46cb-86d5-b6fc7cd2eae7",
+      "name": "Select email"
+    },
+    {
+      "parameters": {
+        "content": "## 🏷️ Email Intake & Routing",
+        "height": 800,
+        "width": 1944
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "90c8d067-0331-4da9-95a2-010aff3c51b4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## main Agent",
+        "height": 1020,
+        "width": 1520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        0
+      ],
+      "id": "06ed3ca3-bce1-4aba-9853-e3200b3d1a7b",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Audit",
+        "height": 660,
+        "width": 640,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3584,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "dc294a08-ef77-45ca-9a35-7c7aa85235ac",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "valueToMatchOn": "={{ $('Merge').item.json.row_id }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "response",
+              "value": "=Reply sent to client at {{ $now }}:{{ $('Agent_replies').item.json.output.emil_body }}"
+            },
+            {
+              "column": "customer_reply_on_message_id",
+              "value": "={{ $json.messageId }}"
+            },
+            {
+              "column": "human_support"
+            },
+            {
+              "column": "status",
+              "value": "replied"
+            },
+            {
+              "column": "audit_score",
+              "value": "={{ $('Audit Result Fields').item.json.output.Audit_right_email_reply }}"
+            },
+            {
+              "column": "audit_comment",
+              "value": "={{ $('Audit Result Fields').item.json.output.Audit_comment }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        5104,
+        80
+      ],
+      "id": "9677a464-f585-4cf1-8e65-277a8d7b19ea",
+      "name": "Update DB with Agent response"
+    },
+    {
+      "parameters": {
+        "content": "## Agent Response & Escalation\n\n",
+        "height": 680,
+        "width": 2380,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4288,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "4bfa6907-bdf3-471c-813c-b4668e5a88f0",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "valueToMatchOn": "={{ $('Merge').item.json.row_id }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "human_support",
+              "value": "={{ $('Direction edit').item.json.output.Direction }}"
+            },
+            {
+              "column": "audit_comment",
+              "value": "={{ $('If').item.json.output.Audit_comment }}"
+            },
+            {
+              "column": "audit_score",
+              "value": "={{ $('If').item.json.output.Audit_right_email_reply }}"
+            },
+            {
+              "column": "reply_on_message_id",
+              "value": "={{ $json.messageId }}"
+            },
+            {
+              "column": "response",
+              "value": "={{ $('Agent_replies').item.json.output.emil_body }}"
+            },
+            {
+              "column": "status",
+              "value": "escalated_to_human_support "
+            }
+          ]
+        },
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        6080,
+        448
+      ],
+      "id": "153752f6-3d4c-496a-a9de-7bef6dc0fe37",
+      "name": "update DB"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('AI Agent').item.json.output.Agent_email }}",
+        "toEmail": "={{ $('Merge').item.json.from }}",
+        "subject": "=RE: {{ $('Email_Trigger').first().json.subject }}",
+        "html": "=\n{{ \n  $('Agent_replies').item.json.output.emil_body\n  + '<br><br>' \n  + $('Agent').item.json.signature \n}}\n\n\n\n<hr style=\"border: 0; border-top: 1px solid #ccc; margin: 20px 0;\">\n\n<p style=\"font-size: 13px; color: #555555; font-family: Arial, sans-serif;\">\n  On {{ $('Email_Trigger').first().json.headers.date }},\n  <a href=\"mailto:{{ $('Merge').item.json.from }}\" style=\"color: #1a0dab; text-decoration: none;\">\n{{ $('Merge').item.json.from }}  </a> wrote:\n</p>\n\n<blockquote style=\"margin: 0 0 0 1em; border-left: 2px solid #ccc; padding-left: 1em; color: #333; font-family: Arial, sans-serif; font-size: 14px;\">\n  {{ $('Merge').item.json.body }}\n</blockquote>\n",
+        "options": {
+          "appendAttribution": false,
+          "ccEmail": "={{ $('Merge').item.json.cc }},raouf@future-trans.com",
+          "replyTo": "={{ $('AI Agent').item.json.output.Agent_email }}"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4880,
+        80
+      ],
+      "id": "495d7d91-f376-4b60-a91f-f94bdef76e1d",
+      "name": "Send Email",
+      "webhookId": "9faa1cce-68d2-4b6a-a912-01fb420f3112"
+    },
+    {
+      "parameters": {
+        "name": "work_history_workflow",
+        "description": "call this tool to get information for specific job type (translation,editing,.)",
+        "workflowId": {
+          "__rl": true,
+          "value": "1aAoiTggUm6JGiFm",
+          "mode": "list",
+          "cachedResultName": "history_workflow"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Query": "={{ $fromAI('Fields_Extractor_tool_Services') }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        560
+      ],
+      "id": "0e6aef88-b8c5-4bce-9068-b3e064f2d1dc",
+      "name": "Work history tool"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer’s Original Email Subject:\n{{ $json.output.Email_subject }}\nAgent’s Response Email To:\n{{ $('AI Agent').item.json.output.to_email }}\n--\nCustomer’s Original Email Body:\n{{ $('Merge').item.json.body }}\nsupport_message :\n{{ $('Merge').item.json.clean_support_message }}\n\nAgent’s Response to  Original Email Body:\n{{ $('Merge').item.json.Agent_response }}\nThe customer's follow-up reply:\n{{ $('Merge').item.json.Customer_reply }}\nAgent’s Response to  The customer's follow-up reply:\n{{ $('AI Agent').item.json.output.emil_body }}\n\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a professional email audit specialist. Your responsibility is to analyze an AI-generated reply and determine whether it accurately, clearly, and completely responds to the customer’s actual request.\n\nYou will be given:\n\n* The customer's original email (sender, subject, and body).\n* The agent's reply (recipient and body).\n* The customer's follow-up reply (if they continued the thread)\n* The agent's response to the follow-up (if present).\n\n---\n\n**Your goal is to evaluate the reply based on the following dimensions:**\n\n### 1. **Audit\\_right\\_email\\_reply** (0–10):\n\nThis score reflects how well the agent's response:\n\n* Accurately addresses **every part of the customer's inquiry** (languages, services, files, deadline, questions).\n* Is **contextually relevant** (does not introduce unrelated content or avoid the core request).\n* Is **complete** (all requested languages, files, questions are acknowledged).\n* Is **practical** (includes prices, timelines, or helpful clarifications when applicable).\n\n* If the customer sends a follow-up message indicating confusion or unresolved needs, deduct 1–2 additional points.\n\n* If the agent provides a follow-up reply that successfully resolves the confusion, restore 1–2 points based on clarity and completeness.\n\n#### **Scoring Rules:**\n\n* Start at 10. Deduct:\n\n  * –2 points if the agent replies about **something the client didn’t ask for**.\n  * –1–2 points per **missing language, file, or detail** not acknowledged.\n  * –2 points if phrases like “not available”, “not established”, or “cannot provide” are present **without justification or helpful alternatives**.\n  * –1 point if tone is overly vague or generic.\n  * –1–2 points if the customer followed up with a question or clarification.\n* Restore 1–2 points if the agent's reply to the follow-up message resolves the issues effectively.\n* DO NOT penalize cases where the source and target languages are intentionally the same, such as monolingual services (e.g., proofreading, revision). These are valid and should not be flagged as errors.\n\n---\n\n### 2. **Audit\\_right\\_email\\_to** (true/false):\n\nThis value confirms whether the agent responded to the **correct recipient** (the original sender).\n\n* `true` if reply matches the customer's \"from\" email.\n* `false` otherwise (wrong recipient or redirected).\n\n---\n\n### 3. **Audit\\_comment** (2–3 sentences):\n\nGive a clear summary that:\n\n* Explains what the customer asked for.\n* Highlights what was missing or misaligned in the agent's reply.\n* Acknowledges good tone, formatting, or extra helpful context if present.\n* If the agent responded to a follow-up and resolved the confusion, mention it positively.\n\n\n\n### ✅ Final Output Format:\n\nRespond with this JSON structure only:\n\n```json\n{\n  \"Audit_right_email_reply\": 0–10,\n  \"Audit_right_email_to\": true or false,\n  \"Audit_comment\": \"Your final reasoning here\"\n}\n```\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        3888,
+        208
+      ],
+      "id": "0a77be44-cdd9-4d79-91c4-6b3d412f9d18",
+      "name": "Audit Agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8d4847da-de6a-483e-9a27-b408a73eddb2",
+              "leftValue": "={{ $('Agent_replies').item.json.output.Direction }}",
+              "rightValue": "ignore",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4912,
+        288
+      ],
+      "id": "ed14c30d-ff3d-43fe-9e2a-eca1fe24f733",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "valueToMatchOn": "={{ $('Insert_new_mail').item.json.data.insertId }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "body",
+              "value": "={{ $('Email_Trigger').item.json.html }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        5184,
+        272
+      ],
+      "id": "aab9d078-7793-474f-9b98-e55ff3567049",
+      "name": "Update DB"
+    },
+    {
+      "parameters": {
+        "dataToSave": {
+          "values": [
+            {
+              "key": "m",
+              "value": "={{ $('Email_Trigger').first().json.messageId }}"
+            },
+            {
+              "key": "id",
+              "value": "={{ $('Merge').item.json.row_id }}"
+            },
+            {
+              "key": "subject",
+              "value": "={{ $('Merge').item.json.subject }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executionData",
+      "typeVersion": 1,
+      "position": [
+        5520,
+        80
+      ],
+      "id": "06bb1add-7869-4f58-b31f-8910a69faf17",
+      "name": "Execution Data"
+    },
+    {
+      "parameters": {
+        "dataToSave": {
+          "values": [
+            {
+              "key": "m",
+              "value": "={{ $('Email_Trigger').first().json.messageId }}"
+            },
+            {
+              "key": "id",
+              "value": "={{ $('Merge').item.json.row_id }}"
+            },
+            {
+              "key": "subject",
+              "value": "={{ $('Merge').item.json.subject }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executionData",
+      "typeVersion": 1,
+      "position": [
+        6480,
+        448
+      ],
+      "id": "01e0c559-cd20-4359-ae3e-a3b623766357",
+      "name": "Execution Data1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0eb3f7d3-963c-4a90-8a92-6400a6ae045c",
+              "name": "from",
+              "value": "={{ $json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "7fd1dff6-d9eb-4e6a-b4e6-608e29e5c8ed",
+              "name": "subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "aa46e7d5-76f1-4a87-9f95-8ab48ad561b6",
+              "name": "body",
+              "value": "={{ $json.body }}",
+              "type": "string"
+            },
+            {
+              "id": "d9ec759d-f90b-4db9-ab7b-04db6bfa3c80",
+              "name": "Support_response",
+              "value": "={{ $json.response }}",
+              "type": "string"
+            },
+            {
+              "id": "1e1c7808-9fbb-44eb-8f82-66584de472e3",
+              "name": "row_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "a8fb058a-7217-4c86-b321-a634035066a9",
+              "name": "human_support",
+              "value": "={{ $json.human_support }}",
+              "type": "string"
+            },
+            {
+              "id": "cbb6bbbb-17fb-4263-ab91-e81765cd0cf6",
+              "name": "workflow_status_id",
+              "value": 0,
+              "type": "number"
+            },
+            {
+              "id": "48cf0e0f-94e8-462a-b14d-bf80b7ec45e5",
+              "name": "New_Customer_email",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "4f071e1b-ee7c-4e92-827a-de526a262b65",
+              "name": "cc",
+              "value": "={{ $json.cc }}",
+              "type": "string"
+            },
+            {
+              "id": "7562a41f-ba89-453a-bd99-bfb4fbebdd4c",
+              "name": "Type",
+              "value": "new_email",
+              "type": "string"
+            },
+            {
+              "id": "1bd9a43e-198c-4423-8566-725a69dbb1c6",
+              "name": "Email_body_as_HTML",
+              "value": "={{ $('Email_Trigger').first().json.textAsHtml }}",
+              "type": "string"
+            },
+            {
+              "id": "ab71e154-f9ab-45f0-b5f3-fc239ff60ad1",
+              "name": "Customer_reply",
+              "value": "={{ $json.thread_text.split(/On .*wrote:/)[0].trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "5416fc27-4b72-455f-b461-5503c523b3e6",
+              "name": "was_escalated_to_support",
+              "value": false,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1568,
+        304
+      ],
+      "id": "4be38872-77de-4306-9041-c39cc175994d",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0eb3f7d3-963c-4a90-8a92-6400a6ae045c",
+              "name": "from",
+              "value": "={{ $json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "7fd1dff6-d9eb-4e6a-b4e6-608e29e5c8ed",
+              "name": "subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "aa46e7d5-76f1-4a87-9f95-8ab48ad561b6",
+              "name": "body",
+              "value": "={{ $json.body }}",
+              "type": "string"
+            },
+            {
+              "id": "03be73da-313a-4705-824e-e133e5a95a48",
+              "name": "Support_response",
+              "value": "={{ $json.support_response }}",
+              "type": "string"
+            },
+            {
+              "id": "6374df58-5daa-45da-8694-14b8aa179447",
+              "name": "row_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "4c98f6ca-1328-4d2b-9c18-d5d2084d186d",
+              "name": "human_support",
+              "value": "={{ $json.human_support }}",
+              "type": "string"
+            },
+            {
+              "id": "fb88e8fc-0aad-4b7b-b4ae-27084708ac65",
+              "name": "workflow_status_id",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "4334e590-d09a-462b-8b6e-1691c11bb86d",
+              "name": "support_email",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "23453eca-b9e4-4214-9727-daca5c0d4a7a",
+              "name": "cc",
+              "value": "={{ $json.cc }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1232,
+        80
+      ],
+      "id": "ff6b1e29-8713-4bc7-8b1d-afd24d73e113",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2144,
+        208
+      ],
+      "id": "fc245b27-3a6c-4e5e-a1ba-1a1ff9701fc6",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8d993ec3-38bc-48e2-9fa8-c875099a3eaa",
+              "name": "Agent name",
+              "value": "={{ $json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "0b4bbb7e-6e71-4d15-a60e-555e2e891db1",
+              "name": "signature",
+              "value": "={{ $json.signature }}",
+              "type": "string"
+            },
+            {
+              "id": "0bc8eae1-3715-4eeb-b413-50d641319e60",
+              "name": "Agent email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "0e9b526f-57d9-46ea-83c5-c25947e34cbe",
+              "name": "human_support_email",
+              "value": "={{ $json.human_support_email }}",
+              "type": "string"
+            },
+            {
+              "id": "0af925e6-1c50-4a43-ae12-ddcb4d49f742",
+              "name": "customer_message",
+              "value": "={{ $if($('Merge').item.json.Customer_email , \n  \"*Original Email Details:*\\nFrom: \" + ($('Merge').first().json.from) +\n  \"\\nSubject: \" + ($('Merge').first().json.subject) +\n  \"\\nBody:\\n\" + ($('Merge').item.json.body),\n  \" \") \n}}\n\n\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2704,
+        208
+      ],
+      "id": "e7f3de1b-5a43-43d6-9f55-2bab92a040b7",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "name": "Fields_Extractor_tool",
+        "description": "Extract and normalize structured fields from the user query such as job_type, quantity, unit, source_language, and target_language. This tool ensures clean and consistent input is passed to downstream tools like pricing, planning, and work history. It handles messy formats, typos, abbreviations, and compound services by applying strict normalization rules and returns values in a validated JSON object.",
+        "workflowId": {
+          "__rl": true,
+          "value": "7nORvU3Bw0UGF7sC",
+          "mode": "list",
+          "cachedResultName": "Fields Extractor"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Query": "={{ $fromAI(\"Query\") }}"
+          },
+          "matchingColumns": [
+            "Query"
+          ],
+          "schema": [
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        560
+      ],
+      "id": "6a8a080f-3364-4c7d-bb89-382f85b466e1",
+      "name": "Fields Extractor Tool"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "agents",
+          "mode": "list",
+          "cachedResultName": "agents"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "email",
+              "value": "=agent@example.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        2464,
+        208
+      ],
+      "id": "cfe9f6ec-a4ae-493b-a978-dbf26a924025",
+      "name": "Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "1zAQDLjCsSdz2DZk",
+          "mode": "list",
+          "cachedResultName": "Supporter reply tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Query": "={{ $json.Support_response }}"
+          },
+          "matchingColumns": [
+            "Query"
+          ],
+          "schema": [
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1408,
+        80
+      ],
+      "id": "0194491b-e217-454a-92f8-8b14322434de",
+      "name": "Execute Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "77ccb6cb-a63f-4f83-941e-6f14a8bd575a",
+              "name": "body",
+              "value": "={{ $('Edit Fields1').item.json.body }}",
+              "type": "string"
+            },
+            {
+              "id": "c4ff10b4-bf1d-43e3-84fd-d21ee4072e12",
+              "name": "Direction",
+              "value": "={{ $json.output.Direction }}",
+              "type": "string"
+            },
+            {
+              "id": "50a9180e-c744-46f9-84a7-8eb0249e9e05",
+              "name": "clean_support_message",
+              "value": "={{ $json.output.clean_support_message }}",
+              "type": "string"
+            },
+            {
+              "id": "b27ae810-db42-44bf-8e4f-56a60b76707a",
+              "name": "from",
+              "value": "={{ $('Edit Fields1').item.json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "bef55b8b-7057-49f2-ba9b-2a58a6e68614",
+              "name": "cc",
+              "value": "={{ $('Edit Fields1').item.json.cc }}",
+              "type": "string"
+            },
+            {
+              "id": "7d605ac0-7b0b-44fc-a3b0-ae7cb48d2903",
+              "name": "Type",
+              "value": "support_email",
+              "type": "string"
+            },
+            {
+              "id": "9b55d076-6f6d-46b6-bebd-1fb272c1f825",
+              "name": "row_id",
+              "value": "={{ $('Edit Fields1').item.json.row_id }}",
+              "type": "string"
+            },
+            {
+              "id": "1f36829c-5d59-4cb4-a49b-a2d889069acc",
+              "name": "subject",
+              "value": "={{ $('Edit Fields1').item.json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "bfaced21-6973-4978-888d-a1d15ca3dc72",
+              "name": "Support_response",
+              "value": "={{ $('Edit Fields1').item.json.Support_response }}",
+              "type": "string"
+            },
+            {
+              "id": "d02630c4-f970-4241-871d-d1e1af9cf5c2",
+              "name": "Customer_reply",
+              "value": "={{ $('Select email').item.json.thread_text}}\n",
+              "type": "string"
+            },
+            {
+              "id": "fde291a4-1fbd-42df-be99-9dd2ba46e075",
+              "name": "was_escalated_to_support",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "de924252-3305-4430-b908-3fe840b59184",
+              "name": "Support_email",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1584,
+        80
+      ],
+      "id": "150d03ce-39eb-4858-bb12-f61354699953",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $('Switch').item.json.data[0].id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        1184,
+        480
+      ],
+      "id": "68a19798-463a-4b74-8c49-378d91b1f57a",
+      "name": "MySQL1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0eb3f7d3-963c-4a90-8a92-6400a6ae045c",
+              "name": "from",
+              "value": "={{ $json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "7fd1dff6-d9eb-4e6a-b4e6-608e29e5c8ed",
+              "name": "subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "aa46e7d5-76f1-4a87-9f95-8ab48ad561b6",
+              "name": "body",
+              "value": "={{ $json.body }}",
+              "type": "string"
+            },
+            {
+              "id": "d9ec759d-f90b-4db9-ab7b-04db6bfa3c80",
+              "name": "Support_response",
+              "value": "={{ $json.support_response }}",
+              "type": "string"
+            },
+            {
+              "id": "1e1c7808-9fbb-44eb-8f82-66584de472e3",
+              "name": "row_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "a8fb058a-7217-4c86-b321-a634035066a9",
+              "name": "human_support",
+              "value": "={{ $json.human_support }}",
+              "type": "string"
+            },
+            {
+              "id": "cbb6bbbb-17fb-4263-ab91-e81765cd0cf6",
+              "name": "workflow_status_id",
+              "value": 0,
+              "type": "number"
+            },
+            {
+              "id": "48cf0e0f-94e8-462a-b14d-bf80b7ec45e5",
+              "name": "Customer_email",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "4f071e1b-ee7c-4e92-827a-de526a262b65",
+              "name": "cc",
+              "value": "={{ $json.cc }}",
+              "type": "string"
+            },
+            {
+              "id": "8173f7e3-4bbb-450c-8a6f-9f7856909ceb",
+              "name": "Agent_response",
+              "value": "={{ $json.response.replace(/<[^>]*>/g, '').replace(/\\s+/g, ' ').trim() }}\n",
+              "type": "string"
+            },
+            {
+              "id": "e64980bf-68bf-4ebf-8758-27dbebd959bc",
+              "name": "Customer_reply",
+              "value": "={{ $json.thread_text.split(/On .*wrote:/)[0].trim() }}\n",
+              "type": "string"
+            },
+            {
+              "id": "0d4bba1e-667b-4f3d-93bd-e1d460c06bfd",
+              "name": "Reply_to_Customer_email",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ff2ead76-babe-4f68-a9cf-70318f017730",
+              "name": "Type",
+              "value": "customer_reply",
+              "type": "string"
+            },
+            {
+              "id": "4e6714bd-9606-4c07-8939-f7db25f52182",
+              "name": "thread_text",
+              "value": "={{ $json.thread_text.split(/On .*wrote:/)[0].trim() }}\n",
+              "type": "string"
+            },
+            {
+              "id": "92438f38-aa53-4754-8f28-15c86d0233c5",
+              "name": "was_escalated_to_support",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "9a742a1c-7ef5-4674-a946-3496efc5c8c6",
+              "name": "Email_body_as_HTML",
+              "value": "={{ $('Email_Trigger').first().json.textAsHtml }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1568,
+        480
+      ],
+      "id": "08f200bf-cc2d-4b1d-b1f4-279b4de2e51d",
+      "name": "Edit Fields4"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4a8975d0-8d8c-4873-829d-46b2e89ca322",
+              "name": "text",
+              "value": "={{ $('Email_Trigger').first().json.text.split(/\\nOn .* wrote:/)[0].trim() }}\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        80
+      ],
+      "id": "67fbe5eb-339b-4374-a724-7d840a2c10d5",
+      "name": "Support_reply_Fix"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "dataMode": "defineBelow",
+        "columnToMatchOn": "id",
+        "valueToMatchOn": "={{ $json.data[0].id }}",
+        "valuesToSend": {
+          "values": [
+            {
+              "column": "thread_text",
+              "value": "={{ $('Email_Trigger').item.json.text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        864,
+        480
+      ],
+      "id": "9d360f4d-c601-40c3-aac4-3fd0030b4f65",
+      "name": "append"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": {
+          "__rl": true,
+          "value": "customer_threads",
+          "mode": "list",
+          "cachedResultName": "customer_threads"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $('Merge').item.json.row_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        5328,
+        80
+      ],
+      "id": "09d5b85b-0752-453e-b096-148fc9d9500d",
+      "name": "MySQL"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the current item\nconst item = $input.item;\n\n// Copy binary data from the Email_Trigger node\nitem.binary = $items(\"Email_Trigger\")[0].binary;\n\nreturn item;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5552,
+        448
+      ],
+      "id": "84130383-7a22-416f-83e6-9dc66fb14b2d",
+      "name": "Code1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Agent_replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer questions with a vector store": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Postgres PGVector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Audit Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model_ret": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent_replies": {
+      "main": [
+        [
+          {
+            "node": "Audit Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Audit Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Result Fields": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pricing workflow": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "planning workflow": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email_Trigger": {
+      "main": [
+        [
+          {
+            "node": "select original email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert_new_mail": {
+      "main": [
+        [
+          {
+            "node": "MySQL_get_new",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL_get_new": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres PGVector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Answer questions with a vector store",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_supported_docs": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Direction edit": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_with_support_reply": {
+      "main": [
+        [
+          {
+            "node": "Select email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Support_reply_Fix",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert_new_mail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "append",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support Email": {
+      "main": [
+        [
+          {
+            "node": "update DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "select original email": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select email": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update DB with Agent response": {
+      "main": [
+        [
+          {
+            "node": "MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update DB": {
+      "main": [
+        [
+          {
+            "node": "Execution Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Update DB with Agent response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Work history tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Agent": {
+      "main": [
+        [
+          {
+            "node": "Audit Result Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Update DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Direction edit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Execute Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fields Extractor Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields3": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields4": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Support_reply_Fix": {
+      "main": [
+        [
+          {
+            "node": "update_with_support_reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "append": {
+      "main": [
+        [
+          {
+            "node": "MySQL1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL": {
+      "main": [
+        [
+          {
+            "node": "Execution Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Support Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bfa39ee3-889b-40e7-a60b-94c46e538ae8",
+  "meta": {
+    "instanceId": "6879686832700fdfc1337ceef8074515c00e5f70caf65f8d38fa5752f3eb6c1a"
+  },
+  "id": "xjsL1fyjIOBnKwYP",
+  "tags": []
+}
